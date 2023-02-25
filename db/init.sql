@@ -1,0 +1,5 @@
+CREATE USER admin WITH PASSWORD 'admin';
+
+CREATE DATABASE weather_db;
+GRANT ALL PRIVILEGES ON DATABASE weather_db TO admin;
+ALTER DATABASE weather_db OWNER TO admin

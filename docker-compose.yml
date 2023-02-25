@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  db:
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    environment:
+      - POSTGRES_PASSWORD=${PASSWORD_DB}
+    env_file:
+      - .env
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-init.d/init.sql
+      - ./db/postgresql:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+    restart: always
+  app:
+      build:
+        context: .
+        dockerfile: Dockerfile
+      command:
+        - /bin/bash
+        - '-c'
+        - sleep 666d
+      volumes:
+        - .:/app
+      ports:
+        - "8000-8010:8000-8010"
+      env_file:
+        - .env
+      depends_on:
+        - db

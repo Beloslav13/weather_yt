@@ -44,7 +44,6 @@ class DBOpenWeatherStorage:
 
     def save(self) -> None:
         try:
-            print(type(self.weather.log.error))
             log_instance = OpenWeatherLog.objects.create(
                 date=self.weather.log.date,
                 result=self.weather.log.result,

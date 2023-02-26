@@ -13,7 +13,7 @@ services:
       - ./db/init.sql:/docker-entrypoint-init.d/init.sql
       - ./db/postgresql:/var/lib/postgresql/data/
     ports:
-      - "5432:5432"
+      - "5436:5432"
     restart: always
   app:
       build:

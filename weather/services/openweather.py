@@ -42,7 +42,7 @@ class DBOpenWeatherStorage:
     def __init__(self, weather: OpenWeatherData):
         self.weather = weather
 
-    def save(self):
+    def save(self) -> None:
         try:
             print(type(self.weather.log.error))
             log_instance = OpenWeatherLog.objects.create(
@@ -78,7 +78,7 @@ class OpenWeatherAPI:
         self.longitude = longitude
         self.url = API_URL.format(self.latitude, self.longitude, os.environ.get("API_KEY"))
 
-    def request(self):
+    def request(self) -> dict:
         error_data = {}
         try:
             data = requests.get(url=self.url).json()
@@ -93,22 +93,26 @@ class OpenWeatherAPI:
             return data
         return error_data
 
-    def parse_weather(self, response: dict) -> OpenWeatherData:
+    def parse_weather(self, response: dict) -> OpenWeatherData | None:
+        if not response:
+            return None
+
         if response.get("error"):
-            return self.create_weather_data(error=True, error_data=response["error"])
+            return self._create_weather_data(error=True, error_data=response["error"])
 
         weather_data_fields = {}
         self._prepare_weather_fields(response, weather_data_fields)
-        return self.create_weather_data(weather_data_fields)
+        return self._create_weather_data(weather_data_fields)
 
-    def _prepare_weather_fields(self, response: dict, weather_data_fields: dict):
+    def _prepare_weather_fields(self, response: dict, weather_data_fields: dict) -> None:
         self.get_city(response, weather_data_fields)
         self.get_coordinate(response['coord'], weather_data_fields)
         self.get_temperature(response, weather_data_fields)
         self.get_sunrise(response, weather_data_fields)
         self.get_sunset(response, weather_data_fields)
 
-    def create_weather_data(self, weather_data_fields: dict = None, error: bool = False, error_data: dict = None) -> OpenWeatherData:
+    @staticmethod
+    def _create_weather_data(weather_data_fields: dict = None, error: bool = False, error_data: dict = None) -> OpenWeatherData:
         if not error:
             result = OpenWeatherData(
                 log=LogOpenWeatherData(date=timezone.now(), result=True, error={}),

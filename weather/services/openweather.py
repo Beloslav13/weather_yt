@@ -2,18 +2,21 @@ import os
 from datetime import datetime
 from typing import NamedTuple
 
+import requests
 from django.utils import timezone
+from json import JSONDecodeError
+
 from weather.services.base_weather import Celsius, Coordinate
 
 from weather.models import OpenWeatherLog, OpenWeather
 
 # test data
-data = {'coord': {'lon': 36.56731, 'lat': 50.556},
-        'weather': [{'id': 800, 'main': 'Clear', 'description': 'ясно', 'icon': '01d'}], 'base': 'stations',
-        'main': {'temp': -7.88, 'feels_like': -14.77, 'temp_min': -8.28, 'temp_max': -7.88, 'pressure': 1022,
-                 'humidity': 62}, 'visibility': 10000, 'wind': {'speed': 5, 'deg': 320}, 'clouds': {'all': 0},
-        'dt': 1677153668, 'sys': {'type': 1, 'id': 9030, 'country': 'RU', 'sunrise': 1677126678, 'sunset': 1677164602},
-        'timezone': 10800, 'id': 824987, 'name': 'Gorod Belgorod', 'cod': 200}
+# data = {'coord': {'lon': 36.56731, 'lat': 50.556},
+#         'weather': [{'id': 800, 'main': 'Clear', 'description': 'ясно', 'icon': '01d'}], 'base': 'stations',
+#         'main': {'temp': -7.88, 'feels_like': -14.77, 'temp_min': -8.28, 'temp_max': -7.88, 'pressure': 1022,
+#                  'humidity': 62}, 'visibility': 10000, 'wind': {'speed': 5, 'deg': 320}, 'clouds': {'all': 0},
+#         'dt': 1677153668, 'sys': {'type': 1, 'id': 9030, 'country': 'RU', 'sunrise': 1677126678, 'sunset': 1677164602},
+#         'timezone': 10800, 'id': 824987, 'name': 'Gorod Belgorod', 'cod': 200}
 
 API_URL = "https://api.openweathermap.org/data/2.5/weather?lat={}&lon={}&appid={}&lang=ru&units=metric"
 
@@ -41,6 +44,7 @@ class DBOpenWeatherStorage:
 
     def save(self):
         try:
+            print(type(self.weather.log.error))
             log_instance = OpenWeatherLog.objects.create(
                 date=self.weather.log.date,
                 result=self.weather.log.result,
@@ -75,53 +79,79 @@ class OpenWeatherAPI:
         self.url = API_URL.format(self.latitude, self.longitude, os.environ.get("API_KEY"))
 
     def request(self):
-        # try:
-            # response = requests.get(url=self.url).json()
-        # except JSONDecodeError as e:
-        #     print(e)
-        # except ConnectionError as e:
-        #     print(e)
-        # except Exception as e:
-        #     print(e)
-        return data
+        error_data = {}
+        try:
+            data = requests.get(url=self.url).json()
+            # raise JSONDecodeError("mother fucker", "error doc", 10)
+        except JSONDecodeError as e:
+            error_data.update({"error": {"msg": e.msg, "doc": e.doc, "pos": e.pos}})
+        except ConnectionError as e:
+            error_data.update({"error": {"msg": e}})
+        except Exception as e:
+            error_data.update({"error": {"msg": e}})
+        else:
+            return data
+        return error_data
 
     def parse_weather(self, response: dict) -> OpenWeatherData:
-        city = self.get_city(response)
-        coordinate = self.get_coordinate(response['coord'])
-        temp = self.get_temperature(response)
-        sunrise = self.get_sunrise(response)
-        sunset = self.get_sunset(response)
-        return OpenWeatherData(
-            log=LogOpenWeatherData(date=timezone.now(), result=True, error={}),
-            city=city,
-            temp=temp,
-            latitude=coordinate.latitude,
-            longitude=coordinate.longitude,
-            sunrise=sunrise,
-            sunset=sunset,
-        )
+        if response.get("error"):
+            return self.create_weather_data(error=True, error_data=response["error"])
+
+        weather_data_fields = {}
+        self._prepare_weather_fields(response, weather_data_fields)
+        return self.create_weather_data(weather_data_fields)
+
+    def _prepare_weather_fields(self, response: dict, weather_data_fields: dict):
+        self.get_city(response, weather_data_fields)
+        self.get_coordinate(response['coord'], weather_data_fields)
+        self.get_temperature(response, weather_data_fields)
+        self.get_sunrise(response, weather_data_fields)
+        self.get_sunset(response, weather_data_fields)
+
+    def create_weather_data(self, weather_data_fields: dict = None, error: bool = False, error_data: dict = None) -> OpenWeatherData:
+        if not error:
+            result = OpenWeatherData(
+                log=LogOpenWeatherData(date=timezone.now(), result=True, error={}),
+                city=weather_data_fields["city"],
+                temp=weather_data_fields["temp"],
+                latitude=weather_data_fields["lat"],
+                longitude=weather_data_fields["long"],
+                sunrise=weather_data_fields["sunrise"],
+                sunset=weather_data_fields["sunset"],
+            )
+        else:
+            result = OpenWeatherData(
+                log=LogOpenWeatherData(date=timezone.now(), result=False, error=error_data),
+                city="0",
+                temp=0,
+                latitude=0,
+                longitude=0,
+                sunrise=timezone.now(),
+                sunset=timezone.now(),
+            )
+        return result
 
     @staticmethod
-    def get_city(data: dict) -> str:
-        return data['name']
+    def get_city(data: dict, weather_data: dict) -> None:
+        weather_data.update({"city": data["name"]})
 
     @staticmethod
-    def get_coordinate(data: dict) -> Coordinate:
+    def get_coordinate(data: dict, weather_data: dict) -> None:
         coordinate = Coordinate(data['lat'], data['lon'])
-        return coordinate
+        weather_data.update({"lat": coordinate.latitude, "long": coordinate.longitude})
 
     @staticmethod
-    def get_temperature(data: dict) -> Celsius:
+    def get_temperature(data: dict, weather_data: dict) -> None:
         temp = data['main']['temp']
-        return Celsius(temp)
+        weather_data.update({"temp": Celsius(temp)})
 
     @staticmethod
-    def get_sunrise(data: dict) -> datetime:
-        return datetime.fromtimestamp(data['sys']['sunrise'])
+    def get_sunrise(data: dict, weather_data: dict) -> None:
+        weather_data.update({"sunrise": datetime.fromtimestamp(data['sys']['sunrise'])})
 
     @staticmethod
-    def get_sunset(data: dict) -> datetime:
-        return datetime.fromtimestamp(data['sys']['sunset'])
+    def get_sunset(data: dict, weather_data: dict) -> None:
+        weather_data.update({"sunset": datetime.fromtimestamp(data['sys']['sunset'])})
 
     def get_weather(self) -> OpenWeatherData:
         r = self.request()
